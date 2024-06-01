@@ -49,7 +49,7 @@ class DotEnv
      */
     public static function copyVarsToPutenv($prefix = 'PHP_')
     {
-        foreach (self::all() as $key => $value) {
+        foreach (self::flatten(self::all()) as $key => $value) {
             if (is_object($value) || is_array($value)) {
                 $value = serialize($value);
             }
@@ -63,7 +63,7 @@ class DotEnv
      */
     public static function copyVarsToEnv()
     {
-        foreach (self::all() as $key => $value) {
+        foreach (self::flatten(self::all()) as $key => $value) {
             $_ENV[$key] = $value;
         }
     }
@@ -73,7 +73,7 @@ class DotEnv
      */
     public static function copyVarsToServer()
     {
-        foreach (self::all() as $key => $value) {
+        foreach (self::flatten(self::all()) as $key => $value) {
             $_SERVER[$key] = $value;
         }
     }
@@ -98,7 +98,17 @@ class DotEnv
      */
     public static function get($key, $default = null)
     {
-        return isset(self::$variables[$key]) ? self::$variables[$key] : $default;
+        $keys = explode('.', $key);
+        $value = self::$variables;
+
+        foreach ($keys as $k) {
+            if (!isset($value[$k])) {
+                return $default;
+            }
+            $value = $value[$k];
+        }
+
+        return $value;
     }
 
     /**
@@ -112,9 +122,19 @@ class DotEnv
     public static function set($keys, $value = null)
     {
         if (is_array($keys)) {
-            self::$variables = array_merge(self::$variables, $keys);
+            self::$variables = array_merge_recursive(self::$variables, $keys);
         } else {
-            self::$variables[$keys] = $value;
+            $keys = explode('.', $keys);
+            $temp = &self::$variables;
+
+            foreach ($keys as $key) {
+                if (!isset($temp[$key])) {
+                    $temp[$key] = [];
+                }
+                $temp = &$temp[$key];
+            }
+
+            $temp = $value;
         }
     }
 
@@ -153,9 +173,34 @@ class DotEnv
     protected static function checkRequiredVariables()
     {
         foreach (self::$required as $key) {
-            if (!isset(self::$variables[$key])) {
+            if (self::get($key) === null) {
                 throw new MissingVariableException(".env variable '{$key}' is missing");
             }
         }
+    }
+
+    /**
+     * Flatten a multi-dimensional array into a single level.
+     *
+     * @param array  $array
+     * @param string $prefix
+     *
+     * @return array
+     */
+    protected static function flatten(array $array, $prefix = '')
+    {
+        $result = [];
+
+        foreach ($array as $key => $value) {
+            $newKey = $prefix === '' ? $key : $prefix . '.' . $key;
+
+            if (is_array($value)) {
+                $result = array_merge($result, self::flatten($value, $newKey));
+            } else {
+                $result[$newKey] = $value;
+            }
+        }
+
+        return $result;
     }
 }
